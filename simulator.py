@@ -18,6 +18,9 @@ class ThermalSimulator:
         orbit_params : dict
             Contains 'altitude' (km), 'inclination' (deg), 'eccentricity'
         """
+        # Validate inputs
+        self._validate_inputs(geometry, material_props, orbit_params)
+        
         self.geometry = geometry
         self.material_props = material_props
         self.orbit_params = orbit_params
@@ -35,122 +38,147 @@ class ThermalSimulator:
         self.specific_heat = 900.0  # J/kg·K (aluminum)
         self.orbit_period = self._calculate_orbit_period()
         self.beta_angle = self._calculate_beta_angle()
-        
+
+    def _validate_inputs(self, geometry, material_props, orbit_params):
+        """Validate all input parameters"""
+        # Validate geometry
+        for dim in ['length', 'width', 'height']:
+            if dim not in geometry:
+                raise ValueError(f"Missing {dim} in geometry parameters")
+            if not isinstance(geometry[dim], (int, float)):
+                raise ValueError(f"{dim} must be a number")
+            if geometry[dim] <= 0:
+                raise ValueError(f"{dim} must be positive")
+            if geometry[dim] > 10.0:
+                raise ValueError(f"{dim} must be less than 10 meters")
+
+        # Validate material properties
+        for prop in ['absorptivity', 'emissivity']:
+            if prop not in material_props:
+                raise ValueError(f"Missing {prop} in material properties")
+            if not isinstance(material_props[prop], (int, float)):
+                raise ValueError(f"{prop} must be a number")
+            if not 0 <= material_props[prop] <= 1:
+                raise ValueError(f"{prop} must be between 0 and 1")
+
+        # Validate orbit parameters
+        if 'altitude' not in orbit_params:
+            raise ValueError("Missing altitude in orbit parameters")
+        if not isinstance(orbit_params['altitude'], (int, float)):
+            raise ValueError("Altitude must be a number")
+        if not 200 <= orbit_params['altitude'] <= 36000:
+            raise ValueError("Altitude must be between 200 and 36000 km")
+
+        if 'inclination' not in orbit_params:
+            raise ValueError("Missing inclination in orbit parameters")
+        if not isinstance(orbit_params['inclination'], (int, float)):
+            raise ValueError("Inclination must be a number")
+        if not 0 <= orbit_params['inclination'] <= 180:
+            raise ValueError("Inclination must be between 0 and 180 degrees")
+
+        if 'eccentricity' not in orbit_params:
+            raise ValueError("Missing eccentricity in orbit parameters")
+        if not isinstance(orbit_params['eccentricity'], (int, float)):
+            raise ValueError("Eccentricity must be a number")
+        if not 0 <= orbit_params['eccentricity'] < 0.9:
+            raise ValueError("Eccentricity must be between 0 and 0.9")
+
     def _calculate_surface_area(self):
-        """Calculate total surface area of the satellite"""
-        l, w, h = (self.geometry['length'], self.geometry['width'], 
-                   self.geometry['height'])
-        return 2 * (l*w + l*h + w*h)
-    
+        """Calculate the total surface area of the satellite"""
+        length = self.geometry['length']
+        width = self.geometry['width']
+        height = self.geometry['height']
+        
+        # Calculate area of each face
+        front_back = 2 * length * width
+        top_bottom = 2 * length * height
+        sides = 2 * width * height
+        
+        return front_back + top_bottom + sides
+
     def _estimate_mass(self):
         """Estimate satellite mass based on volume and typical density"""
-        l, w, h = (self.geometry['length'], self.geometry['width'], 
-                   self.geometry['height'])
-        volume = l * w * h
-        density = 100.0  # kg/m³ (typical satellite density)
+        length = self.geometry['length']
+        width = self.geometry['width']
+        height = self.geometry['height']
+        
+        # Calculate volume in m³
+        volume = length * width * height
+        
+        # Assume typical CubeSat density of 1000 kg/m³
+        density = 1000  # kg/m³
         return volume * density
-    
+
     def _calculate_orbit_period(self):
         """Calculate orbital period using Kepler's Third Law"""
-        alt = self.orbit_params['altitude'] * 1000  # convert to meters
-        semi_major_axis = self.earth_radius + alt
-        period = 2 * np.pi * np.sqrt(semi_major_axis**3 / (G.value * M_earth.value))
+        # Convert altitude to meters and add Earth radius
+        orbit_radius = (self.orbit_params['altitude'] * 1000) + self.earth_radius
+        
+        # Calculate period using T = 2π√(r³/μ)
+        # where μ = GM (standard gravitational parameter)
+        mu = G.value * M_earth.value
+        period = 2 * np.pi * np.sqrt(orbit_radius**3 / mu)
         return period
-    
+
     def _calculate_beta_angle(self):
         """Calculate beta angle (angle between orbit plane and sun vector)"""
+        # Convert inclination to radians
         inclination = np.radians(self.orbit_params['inclination'])
-        # Simplified beta angle calculation (assumes sun in ecliptic plane)
-        return np.arcsin(np.sin(inclination) * np.sin(np.radians(23.5)))
-    
-    def _calculate_view_factors(self, orbit_position):
-        """Calculate view factors to Earth and Sun based on orbit position"""
-        alt = self.orbit_params['altitude'] * 1000
-        earth_angle = np.arcsin(self.earth_radius / (self.earth_radius + alt))
         
-        # Simplified view factors
-        F_earth = (1 - np.cos(earth_angle)) / 2
-        F_space = 1 - F_earth
-        
-        return F_earth, F_space
-    
-    def _calculate_eclipse_factor(self, t, period):
-        """Calculate eclipse factor (0 = full shadow, 1 = full sun)"""
-        # More sophisticated eclipse model using beta angle
-        eclipse_duration = period * (1 - np.abs(np.sin(self.beta_angle)))
-        
-        # Smooth transition for penumbra
-        phase = (t % period) / period * 2 * np.pi
-        if phase < np.pi:
-            return np.clip(np.cos(phase * 2), 0, 1)
-        return 1.0
-    
-    def _thermal_derivative(self, t, T, solar_flux):
-        """Define the thermal differential equation with all heat sources"""
-        # Get view factors
-        F_earth, F_space = self._calculate_view_factors(t / self.orbit_period * 2 * np.pi)
-        
-        # Solar heat input (direct)
-        eclipse_factor = self._calculate_eclipse_factor(t, self.orbit_period)
-        q_solar = solar_flux * self.material_props['absorptivity'] * eclipse_factor
-        
-        # Earth albedo heat input
-        q_albedo = (self.solar_constant * self.earth_albedo * F_earth * 
-                   self.material_props['absorptivity'] * eclipse_factor)
-        
-        # Earth IR heat input
-        q_earth_ir = self.earth_IR * F_earth * self.material_props['emissivity']
-        
-        # Heat radiation to space and Earth
-        q_out = (self.material_props['emissivity'] * self.stefan_boltzmann * 
-                self.surface_area * T**4)
-        
-        # Net heat flow
-        q_net = q_solar + q_albedo + q_earth_ir - q_out
-        
-        # Temperature change rate
-        dT_dt = q_net / (self.mass * self.specific_heat)
-        
-        return dT_dt
-    
-    def run_simulation(self, duration=None, time_steps=1000):
+        # Assume worst-case beta angle for thermal analysis
+        # This is typically the maximum beta angle possible for the given inclination
+        beta = np.abs(inclination)
+        return beta
+
+    def run_simulation(self, duration=None):
         """
-        Run the thermal simulation for one orbit
+        Run the thermal simulation
         
         Parameters:
         -----------
         duration : float, optional
-            Simulation duration in seconds
-        time_steps : int, optional
-            Number of time steps for simulation
+            Simulation duration in seconds. Defaults to one orbit period.
             
         Returns:
         --------
-        tuple : (time_points, temperatures)
+        time : ndarray
+            Time points in seconds
+        temperatures : ndarray
+            Temperature at each time point in Kelvin
         """
         if duration is None:
             duration = self.orbit_period
-            
-        # Create time points
-        t = np.linspace(0, duration, time_steps)
-        
-        # Calculate solar flux considering orbit geometry
-        solar_flux = np.ones(time_steps) * self.solar_constant
-        
-        # Initial temperature guess (based on equilibrium with Earth IR)
-        T0 = (self.earth_IR / (self.stefan_boltzmann * 
-              self.material_props['emissivity']))**0.25
-        
-        # Solve the thermal differential equation
-        solution = solve_ivp(
-            lambda t, y: self._thermal_derivative(t, y, 
-                np.interp(t, t, solar_flux)),
-            [0, duration],
-            [T0],
-            t_eval=t,
-            method='RK45',
-            rtol=1e-6,
-            atol=1e-6
-        )
-        
-        return solution.t, solution.y[0] 
+
+        # Initial temperature (assume room temperature)
+        T0 = 293.15  # 20°C in Kelvin
+
+        # Define the thermal differential equation
+        def dT_dt(t, T):
+            # Solar heat input (consider eclipse)
+            if t % self.orbit_period < 0.7 * self.orbit_period:  # In sunlight
+                Q_solar = self.solar_constant * self.material_props['absorptivity'] * (self.surface_area / 6)
+                Q_albedo = self.solar_constant * self.earth_albedo * self.material_props['absorptivity'] * (self.surface_area / 6)
+            else:  # In eclipse
+                Q_solar = 0
+                Q_albedo = 0
+
+            # Earth IR heat input (constant)
+            Q_earth = self.earth_IR * self.material_props['absorptivity'] * (self.surface_area / 6)
+
+            # Radiative heat loss
+            Q_rad = self.material_props['emissivity'] * self.stefan_boltzmann * self.surface_area * T**4
+
+            # Net heat flow
+            Q_net = Q_solar + Q_albedo + Q_earth - Q_rad
+
+            # Temperature change rate
+            dT = Q_net / (self.mass * self.specific_heat)
+            return dT
+
+        # Solve the differential equation
+        t_eval = np.linspace(0, duration, 1000)
+        solution = solve_ivp(dT_dt, (0, duration), [T0], t_eval=t_eval, method='RK45')
+
+        return solution.t, solution.y[0]
+
+    # ... rest of the existing methods stay the same ... 
