@@ -6,6 +6,11 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
+import os
+import sys
+
+# Add parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from thermal.simulator import ThermalSimulator
 
 class ValidatedDoubleSpinBox(QDoubleSpinBox):
@@ -23,6 +28,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ThermaLite - On-Orbit Thermal-Cycle Simulator")
         self.setMinimumSize(1200, 800)
         
+        # Initialize material presets first
+        self._setup_material_presets()
+        
         # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -39,9 +47,6 @@ class MainWindow(QMainWindow):
         # Add status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        
-        # Initialize material presets
-        self._setup_material_presets()
         
     def _setup_material_presets(self):
         self.material_presets = {
@@ -137,7 +142,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         
         # Create matplotlib figure with improved styling
-        plt.style.use('seaborn')
+        plt.style.use('bmh')  # Using a built-in style instead of seaborn
         self.figure = Figure(figsize=(8, 6), dpi=100)
         self.canvas = FigureCanvas(self.figure)
         layout.addWidget(self.canvas)
