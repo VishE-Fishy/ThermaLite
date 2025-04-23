@@ -151,23 +151,22 @@ class MainWindow(QMainWindow):
         return panel
     
     def _run_simulation(self):
+        """Run the thermal simulation with current parameters"""
         try:
-            self.status_bar.showMessage("Running simulation...")
-            
-            # Collect geometry inputs
+            # Get geometry parameters
             geometry = {
                 'length': self.length_input.value(),
                 'width': self.width_input.value(),
                 'height': self.height_input.value()
             }
             
-            # Collect material properties
+            # Get material properties
             material_props = {
                 'absorptivity': self.absorptivity_input.value(),
                 'emissivity': self.emissivity_input.value()
             }
             
-            # Collect orbit parameters
+            # Get orbit parameters
             orbit_params = {
                 'altitude': self.altitude_input.value(),
                 'inclination': self.inclination_input.value(),
@@ -176,54 +175,54 @@ class MainWindow(QMainWindow):
             
             # Create and run simulator
             simulator = ThermalSimulator(geometry, material_props, orbit_params)
-            time_points, temperatures = simulator.run_simulation()
+            time, temp = simulator.run_simulation()
             
-            # Plot results with enhanced styling
-            self.figure.clear()
-            ax = self.figure.add_subplot(111)
-            
-            # Plot temperature curve
-            ax.plot(time_points / 60, temperatures - 273.15, 
-                   color='#2196F3', linewidth=2, label='Temperature')
-            
-            # Add eclipse indication
-            eclipse_duration = 0.3 * time_points[-1]
-            ax.axvspan(0, eclipse_duration / 60, color='#9E9E9E', 
-                      alpha=0.3, label='Eclipse')
-            
-            # Calculate key metrics
-            max_temp = np.max(temperatures) - 273.15
-            min_temp = np.min(temperatures) - 273.15
-            delta_t = max_temp - min_temp
-            
-            # Add annotations
-            ax.annotate(f'Max: {max_temp:.1f}°C', 
-                       xy=(time_points[-1]/60, max_temp),
-                       xytext=(10, 10), textcoords='offset points')
-            ax.annotate(f'Min: {min_temp:.1f}°C',
-                       xy=(time_points[0]/60, min_temp),
-                       xytext=(10, -10), textcoords='offset points')
-            
-            # Enhance plot styling
-            ax.set_xlabel('Time (minutes)', fontsize=10)
-            ax.set_ylabel('Temperature (°C)', fontsize=10)
-            ax.set_title('Surface Temperature vs. Time\n'
-                        f'ΔT = {delta_t:.1f}°C', fontsize=12)
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.legend(loc='upper right')
-            
-            # Adjust layout
-            self.figure.tight_layout()
-            self.canvas.draw()
-            
-            # Update status
-            self.status_bar.showMessage(
-                f"Simulation complete. Temperature range: {min_temp:.1f}°C to {max_temp:.1f}°C")
+            # Plot results
+            self.plot_results(time, temp)
+            self.status_bar.showMessage("Simulation completed successfully")
             
         except ValueError as e:
-            QMessageBox.warning(self, "Input Error", 
-                              "Please ensure all inputs are valid numbers.")
+            # Display the specific validation error message
+            self.status_bar.showMessage(f"Input Error: {str(e)}")
         except Exception as e:
-            QMessageBox.critical(self, "Simulation Error",
-                               f"An error occurred during simulation: {str(e)}")
-            self.status_bar.showMessage("Simulation failed") 
+            # Handle any other unexpected errors
+            self.status_bar.showMessage(f"Simulation failed: {str(e)}")
+
+    def plot_results(self, time, temp):
+        # Plot results with enhanced styling
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        
+        # Plot temperature curve
+        ax.plot(time / 60, temp - 273.15, 
+               color='#2196F3', linewidth=2, label='Temperature')
+        
+        # Add eclipse indication
+        eclipse_duration = 0.3 * time[-1]
+        ax.axvspan(0, eclipse_duration / 60, color='#9E9E9E', 
+                  alpha=0.3, label='Eclipse')
+        
+        # Calculate key metrics
+        max_temp = np.max(temp) - 273.15
+        min_temp = np.min(temp) - 273.15
+        delta_t = max_temp - min_temp
+        
+        # Add annotations
+        ax.annotate(f'Max: {max_temp:.1f}°C', 
+                   xy=(time[-1]/60, max_temp),
+                   xytext=(10, 10), textcoords='offset points')
+        ax.annotate(f'Min: {min_temp:.1f}°C',
+                   xy=(time[0]/60, min_temp),
+                   xytext=(10, -10), textcoords='offset points')
+        
+        # Enhance plot styling
+        ax.set_xlabel('Time (minutes)', fontsize=10)
+        ax.set_ylabel('Temperature (°C)', fontsize=10)
+        ax.set_title('Surface Temperature vs. Time\n'
+                    f'ΔT = {delta_t:.1f}°C', fontsize=12)
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.legend(loc='upper right')
+        
+        # Adjust layout
+        self.figure.tight_layout()
+        self.canvas.draw() 
